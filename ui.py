@@ -3,6 +3,9 @@ from tkinter import ttk
 from PIL import Image, ImageTk
 import cv2
 
+from datFetch import getRecycleInfo
+from datFetch import getDisposeInfo
+
 def setup_window():
     win = tk.Toplevel()
     win.title("Detection Results & Crops")
@@ -46,37 +49,54 @@ def bind_interactions(elements, action, enter_action, leave_action):
         el.bind("<Leave>", leave_action)
 
 
-#TERA KAAM YAHA H
 def open_detail_window(clsName, conf):
-    #ye clsName VARIABLE H YAHI OBJECT KA NAAM H JISKE BAAREME TU DATA COLLECT KAREGA
     detail_win = tk.Toplevel()
     detail_win.title(f"Details - {clsName.upper()}")
-    detail_win.geometry("400x300")
+    detail_win.geometry("420x350")
     detail_win.configure(bg="#1e1e1e")
 
-    title_label = tk.Label(detail_win, text=clsName.upper(), bg="#1e1e1e", fg="#ffffff", font=("Arial", 16, "bold"))
-    title_label.pack(pady=20)
+    rec_res = getRecycleInfo(clsName)
+    di_res = getDisposeInfo(clsName)
 
+    title_label = tk.Label(detail_win, text=clsName.upper(), bg="#1e1e1e", fg="#ffffff", font=("Arial", 16, "bold"))
+    title_label.pack(pady=15)
+
+    recycle_title = tk.Label(
+        detail_win, 
+        text="How to Recycle", 
+        bg="#1e1e1e", 
+        fg="#ffffff", 
+        font=("Arial", 11, "bold")
+    )
+    recycle_title.pack(pady=(5, 0))
     text_one = tk.Label(
         detail_win, 
-        #yaha DISPOSE METHODS KE JAGAH TU APNA DATA FILL KARDE
-        text=f"DISPOSE METHODS", 
+        text=rec_res, 
         bg="#1e1e1e", 
         fg="#cccccc", 
         font=("Arial", 10), 
-        justify="center"
+        justify="center",
+        wraplength=380
     )
     text_one.pack(pady=10)
 
+    dispose_title = tk.Label(
+        detail_win, 
+        text="How to Dispose", 
+        bg="#1e1e1e", 
+        fg="#ffffff", 
+        font=("Arial", 11, "bold")
+    )
+    dispose_title.pack(pady=(5, 0))
+
     text_two = tk.Label(
         detail_win, 
-        #yaha RECYCLE METHODS KE GAJAG APNA DATA FILL KARDE
-        text="RECYCLE METHODS", 
+        text=di_res, 
         bg="#1e1e1e", 
         fg="#888888", 
         font=("Arial", 9, "italic"), 
         justify="center", 
-        wraplength=350
+        wraplength=380
     )
     text_two.pack(pady=10)
 
