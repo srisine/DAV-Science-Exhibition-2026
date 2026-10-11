@@ -5,10 +5,10 @@ import tkinter as tk
 from ui import showUIWin
 
 WINDOW = "Reduce, Reuse and Revive: Webcam Feed"
+DETECTION_WINDOW = "Detected Objects"
 
 
 def fit_to_screen(frame, sw, sh):
-    """Scale + center-crop the frame so it fills the whole screen (no gray/black bars)."""
     h, w = frame.shape[:2]
     scale = max(sw / w, sh / h)
     resized = cv2.resize(frame, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_LINEAR)
@@ -34,6 +34,8 @@ def main():
 
     cv2.namedWindow(WINDOW, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(WINDOW, int(sw * 0.7), int(sh * 0.7))
+    cv2.namedWindow(DETECTION_WINDOW, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(DETECTION_WINDOW, int(sw * 0.4), int(sh * 0.4))
     fullscreen = False
 
     valid_classes = [cls_id for cls_id, name in model.names.items() if name.lower() != 'person']
@@ -55,7 +57,7 @@ def main():
         except tk.TclError:
             break
 
-        key = cv2.waitKey(1) & 0xFF
+        key = cv2.waitKey(30) & 0xFF
 
         if key == ord('q'):
             break
@@ -74,14 +76,14 @@ def main():
                 count = len(results[0].boxes)
                 print(f"Detected {count} object(s)")
 
-                
                 annotated = results[0].plot()
-                cv2.imshow(WINDOW, fit_to_screen(annotated, sw, sh) if fullscreen else annotated)
+                cv2.imshow(DETECTION_WINDOW, annotated)
                 cv2.waitKey(1)
 
                 showUIWin(frame, results, model)
             except Exception:
                 traceback.print_exc() 
+
     cap.release()
     cv2.destroyAllWindows()
     try:
