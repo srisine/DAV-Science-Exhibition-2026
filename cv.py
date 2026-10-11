@@ -18,12 +18,11 @@ def fit_to_screen(frame, sw, sh):
 
 
 def main():
-    print("Loading model...")
     model = YOLO("yolo26l.pt")
 
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
-        print("ERROR: could not open the webcam")
+        print("ERROR")
         return
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
@@ -40,13 +39,10 @@ def main():
 
     valid_classes = [cls_id for cls_id, name in model.names.items() if name.lower() != 'person']
 
-    print("Ready!  SPACE = capture | F = fullscreen on/off | Q = quit")
-    print("(Click on the camera window first so it receives your key presses.)")
-
     while True:
         ret, frame = cap.read()
         if not ret:
-            print("ERROR: could not read a frame from the webcam")
+            print("ERROR")
             break
 
         view = fit_to_screen(frame, sw, sh) if fullscreen else frame
@@ -90,6 +86,8 @@ def main():
         root.destroy()
     except tk.TclError:
         pass
+
+
 
 
 if __name__ == "__main__":
