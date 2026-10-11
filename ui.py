@@ -5,6 +5,8 @@ import cv2
 
 from datFetch import getRecycleInfo
 from datFetch import getDisposeInfo
+from datFetch import getFacrInfo
+from datFetch import getSort
 
 def setup_window():
     win = tk.Toplevel()
@@ -57,9 +59,20 @@ def open_detail_window(clsName, conf):
 
     rec_res = getRecycleInfo(clsName)
     di_res = getDisposeInfo(clsName)
+    fact_res = getFacrInfo(clsName)
+    sort = getSort(clsName)
 
     title_label = tk.Label(detail_win, text=clsName.upper(), bg="#1e1e1e", fg="#ffffff", font=("Arial", 16, "bold"))
     title_label.pack(pady=15)
+
+    sort_title = tk.Label(
+        detail_win, 
+        text=f"Category - {sort}", 
+        bg="#1e1e1e", 
+        fg="#ffffff", 
+        font=("Arial", 11, "bold")
+    )
+    sort_title.pack(pady=(5, 0))
 
     recycle_title = tk.Label(
         detail_win, 
@@ -99,6 +112,26 @@ def open_detail_window(clsName, conf):
         wraplength=380
     )
     text_two.pack(pady=10)
+
+    fact_title = tk.Label(
+        detail_win, 
+        text="Cool Fact", 
+        bg="#1e1e1e", 
+        fg="#ffffff", 
+        font=("Arial", 11, "bold")
+    )
+    fact_title.pack(pady=(5, 0))
+
+    text_three = tk.Label(
+        detail_win, 
+        text=fact_res, 
+        bg="#1e1e1e", 
+        fg="#888888", 
+        font=("Arial", 9, "italic"), 
+        justify="center", 
+        wraplength=380
+    )
+    text_three.pack(pady=10)
 
 def create_card(parent, tk_img, clsName, conf):
     row_frame = tk.Frame(parent, bg="#2d2d2d", highlightbackground="#444444", highlightthickness=1, padx=8, pady=8, cursor="hand2")
