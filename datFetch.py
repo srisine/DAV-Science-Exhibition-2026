@@ -1,97 +1,79 @@
+import json
+
 import ollama
+
+
+MODEL = "llama3.1:8b"
+CATEGORIES = [
+    "recyclable",
+    "e waste",
+    "hazardous",
+    "organic",
+    "generic waste",
+    "special disposal",
+    "unknown",
+]
 
 
 def getSort(clsName):
     try:
-        categories = [
-            "recyclable",
-            "e waste",
-            "hazardous",
-            "organic",
-            "generic waste",
-            "special disposal",
-            "unknown"
-        ]
-
         response = ollama.chat(
-            model="llama3.1:8b",
+            model=MODEL,
             messages=[
                 {
                     "role": "system",
                     "content": (
-                        "You are a waste classification engine, "
-                        "not a conversational assistant. "
-                        "Never greet the user, ask questions, "
-                        "offer to help, or request an object. "
-                        "Classify the given object label only. "
-                        'Return JSON exactly like {"category":"recyclable"}. '
-                        "Choose only from the allowed categories."
-                    )
+                        "Classify the supplied detected object label. "
+                        "Return only JSON with one key named category. "
+                        "Use only an allowed category."
+                    ),
                 },
                 {
                     "role": "user",
-                    "content": (
-                        f"Classify this detected object label: {clsName}. "
-                        f"Allowed categories: {categories}. "
-                        "Return only the JSON object."
-                    )
-                }
+                    "content": f"Object: {clsName}. Allowed categories: {CATEGORIES}",
+                },
             ],
             format={
                 "type": "object",
-                "properties": {
-                    "category": {
-                        "type": "string",
-                        "enum": categories
-                    }
-                },
-                "required": ["category"]
+                "properties": {"category": {"type": "string", "enum": CATEGORIES}},
+                "required": ["category"],
             },
-            options={"temperature": 0}
+            options={"temperature": 0},
         )
-
-        import json
-        result = json.loads(response["message"]["content"])
-        category = result["category"]
-
-        if category not in categories:
-            return "unknown"
-
-        return category
-
-    except Exception as e:
-        print(f"Sorting error: {e}")
+        category = json.loads(response["message"]["content"]).get("category", "unknown")
+        return category if category in CATEGORIES else "unknown"
+    except Exception as exc:
+        print(f"Sorting error: {exc}")
         return "unknown"
 
-def getRecycleInfo(clsName):
+
+def _ask(prompt, fallback):
     try:
-        prompt = f"Provide a creative art and craft upcycling idea using a discarded {clsName}. Keep it concise, around 3 to 4 sentences."
         response = ollama.chat(
-            model='llama3.1:8b',
-            messages=[{'role':'user', 'content':prompt}]
+            model=MODEL,
+            messages=[{"role": "user", "content": prompt}],
         )
-        return response['message']['content'].strip()
+        return response["message"]["content"].strip()
     except Exception:
-        return f'Could not connect to ollama rn'
+        return fallback
+
+
+def getRecycleInfo(clsName):
+    return _ask(
+        f"Provide a creative art and craft upcycling idea using a discarded {clsName}. Keep it concise, around 3 to 4 sentences.",
+        "Could not connect to Ollama right now.",
+    )
+
 
 def getDisposeInfo(clsName):
-    try:
-        prompt = f"Provide the safe and intended way to dispose of a {clsName}. Keep it strictly between 3 to 4 sentences. Focus on safety hazards (e.g., sharp edges, e-waste, toxic materials) and proper disposal channels. Use a clear, direct tone and do not include any introductory or concluding text."
-        response = ollama.chat(
-            model='llama3.1:8b',
-            messages=[{'role':'user', 'content':prompt}]
-        )
-        return response['message']['content'].strip()
-    except Exception:
-        return f'Could not connect to ollama rn'
+    return _ask(
+        f"Provide the safe and intended way to dispose of a {clsName}. Use 3 to 4 sentences. Focus on hazards and proper disposal channels. Be clear and direct.",
+        "Could not connect to Ollama right now.",
+    )
+
 
 def getFacrInfo(clsName):
-    try:
-        prompt = f"Give a fun, gamified environmental impact fact for recycling a {clsName}. Keep it strictly between 3 to 4 sentences. Use a lively, encouraging tone with score-like framing (e.g., XP, eco-points, or carbon saved). Do not include any extra introduction or concluding text."
-        response = ollama.chat(
-            model='llama3.1:8b',
-            messages=[{'role':'user', 'content':prompt}]
-        )
-        return response['message']['content'].strip()
-    except Exception:
-        return f'Could not connect to ollama rn'
+    return _ask(
+        f"Give a fun, gamified environmental impact fact for recycling a {clsName}. Use 3 to 4 lively sentences with eco-points or XP framing.",
+        "Could not connect to Ollama right now.",
+    )
