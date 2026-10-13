@@ -13,6 +13,8 @@ import cv2
 from PIL import Image, ImageTk
 import ollama
 
+import pyttsx3
+
 import os
 
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
@@ -234,15 +236,20 @@ def open_chat_window(class_name, cached_data):
                 return text
         except Exception:
             return text
+
     def worker(query, history, detected_lang=None):
         try:
             response = ollama.chat(model="llama3.1:8b", messages=history)
-            reply = response["message"]["content"].strip()
+            english_reply = response["message"]["content"].strip()
+            
+            # Translate English reply to detected language for display
+            display_reply = english_reply
             if detected_lang and detected_lang != "en":
-                reply = external_translate_to_native(reply, detected_lang)
-            result_queue.put(("AI", reply, query))
+                display_reply = external_translate_to_native(english_reply, detected_lang)
+
+            result_queue.put(("AI", display_reply, english_reply, query))
         except Exception:
-            result_queue.put(("System", "Could not connect to AI assistant right now.", query))
+            result_queue.put(("System", "Could not connect to AI assistant right now.", "", query))
 
     def process_and_send(query, detected_lang=None):
         if not query or busy["value"]:
@@ -292,7 +299,7 @@ def open_chat_window(class_name, cached_data):
                 audio_flat = np.concatenate(audio_stream_data["frames"], axis=0).flatten()
                 
                 if len(audio_flat) < SAMPLE_RATE * 0.5: 
-                    result_queue.put(("System", "Audio too short, please try again.", ""))
+                    result_queue.put(("System", "Audio too short, please try again.", "", ""))
                     return
 
                 segments, info = open_chat_window.whisper_model.transcribe(
@@ -305,10 +312,10 @@ def open_chat_window(class_name, cached_data):
                 if translated_text:
                     result_queue.put(("VoiceQuery", translated_text, detected_lang))
                 else:
-                    result_queue.put(("System", "No speech detected in audio.", ""))
+                    result_queue.put(("System", "No speech detected in audio.", "", ""))
 
             except Exception as e:
-                result_queue.put(("System", f"Translation error: {str(e)}", ""))
+                result_queue.put(("System", f"Translation error: {str(e)}", "", ""))
             finally:
                 status_indicator.configure(text="Active", fg=GREEN)
                 voice_btn.configure(bg="#6366f1")
@@ -318,6 +325,17 @@ def open_chat_window(class_name, cached_data):
     mic_stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype='float32', callback=audio_callback)
     mic_stream.start()
 
+    def speakText(text):
+        def speech_worker():
+            try:
+                engine = pyttsx3.init()
+                engine.say(text)
+                engine.runAndWait()
+            except Exception:
+                pass
+
+        threading.Thread(target=speech_worker, daemon=True).start()
+
     def poll_results():
         if closed["value"]:
             return
@@ -326,13 +344,20 @@ def open_chat_window(class_name, cached_data):
                 item = result_queue.get_nowait()
                 sender = item[0]
                 if sender == "AI":
-                    reply, query = item[1], item[2]
+                    display_reply, english_reply, query = item[1], item[2], item[3]
                     messages.append({"role": "user", "content": query})
-                    messages.append({"role": "assistant", "content": reply})
-                    append_bubble("AI", reply)
+                    messages.append({"role": "assistant", "content": english_reply})
+                    
+                    # 1. Write the translated text in the chatbox
+                    append_bubble("AI", display_reply)
+                    
                     busy["value"] = False
                     send_btn.configure(state="normal", text="Send")
                     voice_btn.configure(state="normal")
+                    
+                    # 2. Speak Ollama's response in English
+                    speakText(english_reply)
+
                 elif sender == "VoiceQuery":
                     query, detected_lang = item[1], item[2]
                     process_and_send(query, detected_lang)
