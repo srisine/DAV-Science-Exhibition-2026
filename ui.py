@@ -13,6 +13,10 @@ import cv2
 from PIL import Image, ImageTk
 import ollama
 
+import os
+
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+
 
 BG = "#09090b"
 PANEL = "#18181b"
