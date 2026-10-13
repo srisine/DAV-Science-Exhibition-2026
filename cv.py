@@ -28,7 +28,6 @@ def fit_to_screen(frame, screen_width, screen_height):
 
 
 def main():
-    print("Loading AI models...")
     try:
         general_model = YOLO("yolo26l.pt")
         cloth_model = YOLO("df2.pt")
@@ -179,7 +178,6 @@ def main():
             root.after(15, update_frame)
 
     root.after(0, update_frame)
-    print("System ready. Focus the webcam window and press SPACE to detect, F for fullscreen, Q to quit.")
     root.mainloop()
 
     state["running"] = False

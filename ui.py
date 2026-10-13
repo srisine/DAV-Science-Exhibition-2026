@@ -3,6 +3,11 @@ import queue
 import threading
 import tkinter as tk
 from tkinter import ttk
+import numpy as np
+import sounddevice as sd
+from faster_whisper import WhisperModel
+import argostranslate.package
+import argostranslate.translate
 
 import cv2
 from PIL import Image, ImageTk
@@ -118,7 +123,6 @@ def open_chat_window(class_name, cached_data):
         font=("Segoe UI", 8),
     ).pack(anchor="w", pady=(3, 0))
 
-    # Chat Messages Canvas / Scroll Area
     chat_container = tk.Frame(chat_win, bg=BG)
     chat_container.pack(fill="both", expand=True, padx=12, pady=(0, 6))
 
@@ -147,7 +151,13 @@ def open_chat_window(class_name, cached_data):
     busy = {"value": False}
     closed = {"value": False}
 
-    # Pass all final generated info as strict context to the AI chat
+    audio_stream_data = {"recording": False, "frames": []}
+    SAMPLE_RATE = 16000
+
+    if not hasattr(open_chat_window, "whisper_model"):
+        print("Loading local Faster Whisper model for translation...")
+        open_chat_window.whisper_model = WhisperModel("medium", device="auto", compute_type="int8")
+
     sort_context = cached_data.get("sort", "Not specified")
     recycle_context = cached_data.get("recycle", "Not specified")
     dispose_context = cached_data.get("dispose", "Not specified")
@@ -157,7 +167,7 @@ def open_chat_window(class_name, cached_data):
         {
             "role": "system",
             "content": (
-                f"You are a friendly, expert eco-friendly assistant helping with "
+                f"You are a friendly, expert eco-friendly assistant and your name is Ecovision AI and you are helping with "
                 f"upcycling, recycling, and safe disposal of {class_name}. "
                 f"Here is the complete analysis previously provided to the user:\n"
                 f"- Category: {sort_context}\n"
@@ -183,7 +193,7 @@ def open_chat_window(class_name, cached_data):
 
         tk.Label(
             bubble,
-            text=f"{'You'}:" if is_user else "🌱 Ecovision Assistant:",
+            text="You:" if is_user else "Ecovision Assistant:",
             bg=bg_color,
             fg=GREEN if not is_user else MUTED,
             font=("Segoe UI", 8, "bold"),
@@ -204,42 +214,130 @@ def open_chat_window(class_name, cached_data):
 
     append_bubble("AI", f"Hi! What would you like to know about this {class_name}?")
 
-    def worker(query, history):
+    def external_translate_to_native(text, target_lang):
+        if target_lang == "en" or not target_lang:
+            return text
+        try:
+            installed_packages = argostranslate.package.get_installed_packages()
+            package_to_use = next(
+                filter(lambda x: x.from_code == "en" and x.to_code == target_lang, installed_packages),
+                None
+            )
+            
+            if package_to_use:
+                return argostranslate.translate.translate(text, "en", target_lang)
+            else:
+                return text
+        except Exception:
+            return text
+    def worker(query, history, detected_lang=None):
         try:
             response = ollama.chat(model="llama3.1:8b", messages=history)
             reply = response["message"]["content"].strip()
+            if detected_lang and detected_lang != "en":
+                reply = external_translate_to_native(reply, detected_lang)
             result_queue.put(("AI", reply, query))
         except Exception:
             result_queue.put(("System", "Could not connect to AI assistant right now.", query))
 
-    def send_message(event=None):
-        query = entry_var.get().strip()
+    def process_and_send(query, detected_lang=None):
         if not query or busy["value"]:
-            return "break"
-
-        entry_var.set("")
+            return
+        
         append_bubble("You", query)
         history = messages.copy() + [{"role": "user", "content": query}]
         busy["value"] = True
         send_btn.configure(state="disabled", text="...")
-        status_indicator.configure(text="● Thinking...", fg="#facc15")
+        voice_btn.configure(state="disabled")
+        status_indicator.configure(text="Thinking...", fg="#facc15")
 
-        threading.Thread(target=worker, args=(query, history), daemon=True).start()
+        threading.Thread(target=worker, args=(query, history, detected_lang), daemon=True).start()
+
+    def send_message(event=None):
+        query = entry_var.get().strip()
+        entry_var.set("")
+        process_and_send(query)
         return "break"
+
+    def audio_callback(indata, frames, time_info, status):
+        if audio_stream_data["recording"]:
+            audio_stream_data["frames"].append(indata.copy())
+
+    def start_recording(event=None):
+        if busy["value"]:
+            return
+        audio_stream_data["recording"] = True
+        audio_stream_data["frames"] = []
+        status_indicator.configure(text="Listening...", fg="#ef4444")
+        voice_btn.configure(bg="#dc2626")
+
+    def stop_recording_and_translate(event=None):
+        if not audio_stream_data["recording"]:
+            return
+        audio_stream_data["recording"] = False
+        status_indicator.configure(text="Translating...", fg="#3b82f6")
+        voice_btn.configure(bg="#6366f1")
+
+        def translate_worker():
+            try:
+                if not audio_stream_data["frames"]:
+                    status_indicator.configure(text="● Active", fg=GREEN)
+                    voice_btn.configure(bg="#6366f1")
+                    return
+
+                audio_flat = np.concatenate(audio_stream_data["frames"], axis=0).flatten()
+                
+                if len(audio_flat) < SAMPLE_RATE * 0.5: 
+                    result_queue.put(("System", "Audio too short, please try again.", ""))
+                    return
+
+                segments, info = open_chat_window.whisper_model.transcribe(
+                    audio_flat, beam_size=5, vad_filter=True, task="translate"
+                )
+                
+                translated_text = " ".join([segment.text for segment in segments]).strip()
+                detected_lang = info.language
+
+                if translated_text:
+                    result_queue.put(("VoiceQuery", translated_text, detected_lang))
+                else:
+                    result_queue.put(("System", "No speech detected in audio.", ""))
+
+            except Exception as e:
+                result_queue.put(("System", f"Translation error: {str(e)}", ""))
+            finally:
+                status_indicator.configure(text="Active", fg=GREEN)
+                voice_btn.configure(bg="#6366f1")
+
+        threading.Thread(target=translate_worker, daemon=True).start()
+
+    mic_stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype='float32', callback=audio_callback)
+    mic_stream.start()
 
     def poll_results():
         if closed["value"]:
             return
         try:
             while True:
-                sender, reply, query = result_queue.get_nowait()
+                item = result_queue.get_nowait()
+                sender = item[0]
                 if sender == "AI":
+                    reply, query = item[1], item[2]
                     messages.append({"role": "user", "content": query})
                     messages.append({"role": "assistant", "content": reply})
-                append_bubble(sender, reply)
-                busy["value"] = False
-                send_btn.configure(state="normal", text="Send")
-                status_indicator.configure(text="● Active", fg=GREEN)
+                    append_bubble("AI", reply)
+                    busy["value"] = False
+                    send_btn.configure(state="normal", text="Send")
+                    voice_btn.configure(state="normal")
+                elif sender == "VoiceQuery":
+                    query, detected_lang = item[1], item[2]
+                    process_and_send(query, detected_lang)
+                elif sender == "System":
+                    reply = item[1]
+                    append_bubble("System", reply)
+                    busy["value"] = False
+                    send_btn.configure(state="normal", text="Send")
+                    voice_btn.configure(state="normal")
         except queue.Empty:
             pass
         if chat_win.winfo_exists():
@@ -247,6 +345,11 @@ def open_chat_window(class_name, cached_data):
 
     def on_close():
         closed["value"] = True
+        try:
+            mic_stream.stop()
+            mic_stream.close()
+        except:
+            pass
         chat_win.destroy()
 
     entry_box = tk.Entry(
@@ -262,6 +365,24 @@ def open_chat_window(class_name, cached_data):
     )
     entry_box.pack(side="left", fill="x", expand=True, ipady=8, ipadx=8, padx=(0, 8))
     entry_box.bind("<Return>", send_message)
+
+    voice_btn = tk.Button(
+        input_frame,
+        text="🎤",
+        bg="#6366f1",
+        fg="#ffffff",
+        font=("Segoe UI", 10, "bold"),
+        bd=0,
+        activebackground="#4f46e5",
+        activeforeground="#ffffff",
+        padx=10,
+        pady=6,
+        cursor="hand2",
+    )
+    voice_btn.pack(side="right", padx=(0, 6))
+    
+    voice_btn.bind("<ButtonPress-1>", start_recording)
+    voice_btn.bind("<ButtonRelease-1>", stop_recording_and_translate)
 
     send_btn = tk.Button(
         input_frame,
@@ -282,7 +403,6 @@ def open_chat_window(class_name, cached_data):
     chat_win.protocol("WM_DELETE_WINDOW", on_close)
     chat_win.after(100, poll_results)
     entry_box.focus_set()
-
 
 def open_detail_window(class_name, confidence):
     from datFetch import getRecycleInfo, getDisposeInfo, getFacrInfo, getSort
